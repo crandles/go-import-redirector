@@ -75,6 +75,7 @@ var (
 	serveTLS   = flag.Bool("tls", false, "serve https on :443")
 	vcs        = flag.String("vcs", "git", "set version control `system`")
 	godoc      = flag.String("godoc", "https://godoc.org/", "godoc redirect address")
+	gosrc      = flag.String("gosrc", "https://github.com/user/", "go source path root")
 	importPath string
 	repoPath   string
 	wildcard   bool
@@ -100,9 +101,9 @@ func main() {
 	}
 	importPath = flag.Arg(0)
 	repoPath = flag.Arg(1)
-	// if !strings.Contains(repoPath, "://") {
-	// 	log.Fatal("repo path must be full URL")
-	// }
+	if !strings.Contains(repoPath, "://") {
+		log.Fatal("repo path must be full URL")
+	}
 	if strings.HasSuffix(importPath, "/*") != strings.Contains(repoPath, "/*") {
 		log.Fatal("either both import and repo must have /* or neither")
 	}
@@ -128,6 +129,7 @@ var tmpl = template.Must(template.New("main").Parse(`<!DOCTYPE html>
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
 <meta name="go-import" content="{{.ImportRoot}} {{.VCS}} {{.VCSRoot}}">
+<meta name="go-source" content="{{.ImportRoot}} {{.SRCRoot}} {{.SRCRoot}}/tree/master{/dir} {{.SRCRoot}}/blob/master{/dir}/{file}#L{line}">
 <meta http-equiv="refresh" content="0; url={{.GoDoc}}">
 </head>
 <body>
@@ -140,12 +142,13 @@ type data struct {
 	ImportRoot string
 	VCS        string
 	VCSRoot    string
+	SRCRoot    string
 	GoDoc      template.URL
 }
 
 func redirect(w http.ResponseWriter, req *http.Request) {
 	path := strings.TrimSuffix(req.Host+req.URL.Path, "/")
-	var importRoot, repoRoot, suffix string
+	var importRoot, repoRoot, srcRoot, suffix string
 	if wildcard {
 		if path == importPath {
 			http.Redirect(w, req, *godoc+importPath, 302)
@@ -165,6 +168,9 @@ func redirect(w http.ResponseWriter, req *http.Request) {
 		} else {
 			repoRoot = repoPath + "/" + elem
 		}
+
+		srcRoot = strings.TrimSuffix(*gosrc, "/") + "/" + elem
+
 	} else {
 		if path != importPath && !strings.HasPrefix(path, importPath+"/") {
 			http.NotFound(w, req)
@@ -173,12 +179,14 @@ func redirect(w http.ResponseWriter, req *http.Request) {
 		importRoot = importPath
 		repoRoot = repoPath
 		suffix = path[len(importPath):]
+		srcRoot = strings.TrimSuffix(*gosrc, "/") + "/" + path
 	}
 	goDocURL := template.URL(*godoc + importRoot + suffix)
 	d := &data{
 		ImportRoot: importRoot,
 		VCS:        *vcs,
 		VCSRoot:    repoRoot,
+		SRCRoot:    srcRoot,
 		GoDoc:      goDocURL,
 	}
 	var buf bytes.Buffer
